@@ -36,32 +36,6 @@ exports.deleteTournament = async (req, res) => {
     }
 };
 
-
-exports.renderPointsTable = async (req, res) => {
-  try {
-    const { tournamentId } = req.params;
-    const tournament = await Tournament.findById(tournamentId);
-    if (!tournament) {
-      return res.status(404).send('Tournament not found');
-    }
-
-    // Ensure only the organiser can access this page
-    if (req.user.role !== 'organiser') {
-      return res.status(403).send('Unauthorized: Only organisers can update points');
-    }
-
-    res.render('updatePointsTable', {
-      tournament,
-      userRole: req.user.role,
-      username: req.user.username
-    });
-  } catch (error) {
-    console.error('Error fetching tournament:', error);
-    return res.status(500).send('Server error');
-  }
-};
-
-
 // Search Organisation
 exports.getOrganiserByUsername = async (req, res) => {
   const { searchTerm } = req.query;
@@ -75,24 +49,26 @@ exports.getOrganiserByUsername = async (req, res) => {
       
       if (organisers.length === 0) {
           console.log(`No organisers found for the username: ${searchTerm}`);
-          return res.render('searchOrg', {
+          return res.status(404).json({
               message: 'No organisers found',
               organisationResults: [],
-              searchTerm: '',
-              results: [] 
+              searchTerm: searchTerm
           });
       }
 
       console.log(`${organisers.length} organisers found.`);
-      return res.render('searchOrg', {
+      return res.status(200).json({
+          message: `${organisers.length} organisers found`,
           organisationResults: organisers,
-          searchTerm: searchTerm,
-          results: []
+          searchTerm: searchTerm
       });
       
   } catch (error) {
       console.error('Error fetching organisers:', error);
-      return res.status(500).render('error', { statusCode: '500', errorMessage: 'Error fetching organisers' });
+      return res.status(500).json({
+          message: 'Error fetching organisers',
+          error: error.message
+      });
   }
 };
 
@@ -103,22 +79,32 @@ exports.updateOrganiserSettings = async (req, res) => {
   const { id } = req.user;
 
   try {
-    const updatedVisibility = {
-      showTournaments: !!showTournaments,
-      showFollowerCount: !!showFollowerCount,
-      showPrizePool: !!showPrizePool,
-    };
+      const updatedVisibility = {
+          showTournaments: !!showTournaments,
+          showFollowerCount: !!showFollowerCount,
+          showPrizePool: !!showPrizePool,
+      };
 
-    await Organiser.findByIdAndUpdate(id, {
-      dashboardVisibility: updatedVisibility,
-    });
+      const organiser = await Organiser.findByIdAndUpdate(
+          id,
+          { dashboardVisibility: updatedVisibility },
+          { new: true } // Return the updated document
+      );
 
-    res.redirect("/organiser/dashboard");
+      if (!organiser) {
+          return res.status(404).json({ error: "Organiser not found" });
+      }
+
+      res.status(200).json({
+          message: "Visibility settings updated successfully",
+          updatedVisibility: organiser.dashboardVisibility,
+      });
   } catch (error) {
-    console.error("Error updating visibility settings:", error);
-    res.status(500).json({ error: "Failed to update settings" });
+      console.error("Error updating visibility settings:", error);
+      res.status(500).json({ error: "Failed to update settings" });
   }
 };
+
 
 exports.updateUsername = async (req, res) => {
   const { newUsername } = req.body;
@@ -258,91 +244,97 @@ exports.updateProfilePhoto = async (req, res) => {
 };
 
 exports.updateVisibilitySettings = async (req, res) => {
-  const { id } = req.user; // Assuming user ID is from JWT
+  const { id } = req.user;
   const {
-    descriptionVisible,
-    profilePhotoVisible,
-    prizePoolVisible,
-    tournamentsVisible,
-    followersVisible,
+      descriptionVisible,
+      profilePhotoVisible,
+      prizePoolVisible,
+      tournamentsVisible,
+      followersVisible,
   } = req.body;
 
   // Convert the string values to booleans
   const updatedVisibilitySettings = {
-    descriptionVisible: descriptionVisible === 'on', // true if checked
-    profilePhotoVisible: profilePhotoVisible === 'on', // true if checked
-    prizePoolVisible: prizePoolVisible === 'on', // true if checked
-    tournamentsVisible: tournamentsVisible === 'on', // true if checked
-    followersVisible: followersVisible === 'on', // true if checked
+      descriptionVisible: descriptionVisible === 'on', // true if checked
+      profilePhotoVisible: profilePhotoVisible === 'on', // true if checked
+      prizePoolVisible: prizePoolVisible === 'on', // true if checked
+      tournamentsVisible: tournamentsVisible === 'on', // true if checked
+      followersVisible: followersVisible === 'on', // true if checked
   };
 
   try {
-    const organiser = await Organiser.findByIdAndUpdate(
-      id,
-      { visibilitySettings: updatedVisibilitySettings },
-      { new: true }
-    );
+      const organiser = await Organiser.findByIdAndUpdate(
+          id,
+          { visibilitySettings: updatedVisibilitySettings },
+          { new: true } // Return the updated document
+      );
 
-    if (!organiser) {
-      return res.status(404).json({ message: "Organiser not found" });
-    }
+      if (!organiser) {
+          return res.status(404).json({ message: "Organiser not found" });
+      }
 
-    res.status(200).redirect(`/api/organiser/${organiser.username}/dashboard`);
+      res.status(200).json({
+          message: "Visibility settings updated successfully",
+          updatedVisibilitySettings: organiser.visibilitySettings,
+      });
   } catch (error) {
-    console.error("Error updating visibility settings:", error);
-    res.status(500).json({
-      error: "Error updating visibility settings",
-      details: error.message,
-    });
+      console.error("Error updating visibility settings:", error);
+      res.status(500).json({
+          error: "Error updating visibility settings",
+          details: error.message,
+      });
   }
 };
 
 
 exports.renderUpdateVisibilitySettings = async (req, res) => {
-    const { id } = req.user; // Assuming user ID is from JWT
+    const { id } = req.user;
     try {
         const organiser = await Organiser.findById(id);
 
-        if (!organiser) {
-            return res.status(404).json({ message: "Organiser not found" });
-        }
+      if (!organiser) {
+          return res.status(404).json({ message: "Organiser not found" });
+      }
 
-        res.render('updateOrganiserDashboardVisibility', { organiser });
-    } catch (error) {
-        console.error("Error fetching organiser data:", error);
-        res.status(500).json({ error: "Error fetching organiser data", details: error.message });
-    }
+      res.status(200).json({
+          message: "Organiser data fetched successfully",
+          organiser,
+      });
+  } catch (error) {
+      console.error("Error fetching organiser data:", error);
+      res.status(500).json({
+          error: "Error fetching organiser data",
+          details: error.message,
+      });
+  }
 };
 
 
 exports.getOrganiserDashboard = async (req, res) => {
-    const { username } = req.params; // Organiser's username passed in the URL
-    const loggedInUserId = req.user._id; // Get the logged-in user's ID
+    const { username } = req.params;
+    const loggedInUserId = req.user._id;
 
     try {
-        // Find the organiser by username
         const organiser = await Organiser.findOne({ username })
             .populate('tournaments')
             .populate('followers');
 
-        if (!organiser) {
-            return res.status(404).json({ message: 'Organiser not found' });
-        }
+      if (!organiser) {
+          return res.status(404).json({ message: 'Organiser not found' });
+      }
 
-        const isOwner = loggedInUserId.equals(organiser._id); // Check if logged-in user is the organiser
+        const isOwner = loggedInUserId.equals(organiser._id);
         console.log("DEBUG:ISOWNER:"+isOwner+"lOGGEDINID:"+loggedInUserId+"ORGID:"+organiser._id);
         const totalTournaments = organiser.tournaments.length;
         console.log("Total Tournaments Count Fetched:"+totalTournaments);
         const followerCount = organiser.followers.length;
         console.log("FollowerCount fetched: "+followerCount);
 
-        // Fetch all tournaments organized by the organiser
         const tournamentList = await Tournament.find({ organiser: organiser._id });
 
-        const totalPrizePool = tournamentList.reduce((sum, tournament) => sum + tournament.prizePool, 0);
-        console.log(totalPrizePool);
+      const totalPrizePool = tournamentList.reduce((sum, tournament) => sum + tournament.prizePool, 0);
+      console.log("Total Prize Pool:", totalPrizePool);
 
-        // Handle visibility settings for players
         const visibilitySettings = organiser.visibilitySettings || {
           descriptionVisible: true,
           profilePhotoVisible: true,
@@ -350,11 +342,11 @@ exports.getOrganiserDashboard = async (req, res) => {
           tournamentsVisible: true,
           followersVisible: true,
       };
-      
-        console.log("Visibility Settings:"+visibilitySettings , followerCount , totalPrizePool , totalTournaments , tournamentList);
-        const reports = await Report.find({ reportType: 'Team' }).populate('reportedTeam');
 
-        // Render the dashboard with all tournaments in a single list
+      console.log("Visibility Settings:", visibilitySettings);
+
+      const reports = await Report.find({ reportType: 'Team' }).populate('reportedTeam');
+
         res.render('organiserDashboard', {
             organiser,
             isOwner,
@@ -371,33 +363,35 @@ exports.getOrganiserDashboard = async (req, res) => {
     }
 };
 
+
 exports.getMyOrganisers = async (req, res) => {
   const { _id } = req.user; // Player ID
 
   try {
       const player = await Player.findById(_id).populate({
-          path: 'following', // Assuming this is the field in Player model
+          path: 'following',
           model: 'Organiser',
           populate: {
-              path: 'tournaments', // Assuming each organiser has a tournaments field
-              model: 'Tournament' // Replace with your actual tournament model name
+              path: 'tournaments',
+              model: 'Tournament'
           }
       });
 
       if (!player) {
-          return res.status(404).render('error', { message: 'Player not found' });
+          return res.status(404).json({ message: 'Player not found' });
       }
 
-      // Log followed organisers for debugging
       console.log('Followed Organisers:', player.following);
 
-      // Render the homepage and pass the followed organisers
       res.render('homepage', {
-          followedOrganisers: player.following // Pass followed organisers to the view
+          followedOrganisers: player.following
       });
   } catch (error) {
-      console.error(error);
-      return res.status(500).render('error', { message: 'Error retrieving followed organisers' });
+      console.error('Error retrieving followed organisers:', error);
+      return res.status(500).json({
+          error: 'Error retrieving followed organisers',
+          details: error.message,
+      });
   }
 };
 
